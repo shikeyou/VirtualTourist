@@ -2,7 +2,7 @@
 //  VirtualTouristTests.swift
 //  VirtualTouristTests
 //
-//  Created by Skeel on 19/9/15.
+//  Created by Keng Siang Lee on 19/9/15.
 //  Copyright (c) 2015 KSL. All rights reserved.
 //
 
