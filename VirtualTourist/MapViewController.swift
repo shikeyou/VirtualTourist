@@ -8,14 +8,13 @@
 
 import UIKit
 import MapKit
+import CoreData
 
 class MapViewController: UIViewController, MKMapViewDelegate {
 
-    @IBOutlet weak var mapView: MKMapView!
-    
-    //var annotations = [MKPointAnnotation]()
-    
-    var longPressRecognizer: UILongPressGestureRecognizer!
+    //============================================
+    // MARK: CONSTANTS
+    //============================================
     
     //constants for user prefs
     let MAP_VIEW_REGION_CENTER_LONGITUDE = "mapView_region_center_longitude"
@@ -23,19 +22,45 @@ class MapViewController: UIViewController, MKMapViewDelegate {
     let MAP_VIEW_REGION_SPAN_LONGITUDE_DELTA = "mapView_region_span_longitudeDelta"
     let MAP_VIEW_REGION_SPAN_LATITUDE_DELTA = "mapView_region_span_latitudeDelta"
     
+    //============================================
+    // MARK: INSTANCE VARIABLES
+    //============================================
+    
+    var pins = [Pin]()
+    
+    var longPressRecognizer: UILongPressGestureRecognizer!
+    
+//    var sharedContext: NSManagedObjectContext {
+//        let delegate = UIApplication.sharedApplication().delegate as! AppDelegate
+//        return delegate.managedObjectContext!
+//    }
+    
+    //============================================
+    // MARK: IBOUTLETS
+    //============================================
+    
+    @IBOutlet weak var mapView: MKMapView!
+    
+    //============================================
+    // MARK: LIFE CYCLE METHODS
+    //============================================
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         // Do any additional setup after loading the view, typically from a nib.
         
         //assign delegate
         mapView.delegate = self
+
+        //setup long press gesture recognizer
+        longPressRecognizer = UILongPressGestureRecognizer(target: self, action: "longPressedCallback:")
+        view.addGestureRecognizer(longPressRecognizer)
         
         //restore map region from user prefs
         loadMapViewRegion()
-
-        //set long press gesture recognizer
-        longPressRecognizer = UILongPressGestureRecognizer(target: self, action: "longPressedCallback:")
-        view.addGestureRecognizer(longPressRecognizer)
+        
+        //load pins from core data
+        loadPinsFromCoreData()
 
     }
 
@@ -43,6 +68,10 @@ class MapViewController: UIViewController, MKMapViewDelegate {
         super.didReceiveMemoryWarning()
         // Dispose of any resources that can be recreated.
     }
+    
+    //============================================
+    // MARK: CALLBACK FUNCTIONS
+    //============================================
     
     func longPressedCallback(recognizer: UILongPressGestureRecognizer) {
         if recognizer.state == UIGestureRecognizerState.Began {
@@ -53,104 +82,123 @@ class MapViewController: UIViewController, MKMapViewDelegate {
             
             //add pin from coordinate
             addPinFromCoordinate(pressedCoordinate)
-            
-            //update map
-            
-            //mapView.showAnnotations(annotations, animated: false)
         }
     }
     
+    //============================================
+    // MARK: METHODS
+    //============================================
+    
     func addPinFromCoordinate(coordinate: CLLocationCoordinate2D) {
-        var annotation = MKPointAnnotation()
-        annotation.coordinate = coordinate
+        
+        //store a pin
+        let pin = Pin(latitude: Float(coordinate.latitude),
+            longitude: Float(coordinate.longitude),
+            context: CoreDataHelper.sharedContext)
+        pins.append(pin)
+        
+        //add an annotation to the map
+        var annotation = PinAnnotation(coordinate: coordinate, pin: pin)
         mapView.addAnnotation(annotation)
-        //annotations.append(annotation)
+        
+        //save core data
+        saveChangesToCoreData()
+        
     }
     
-    func showCollectionsViewForPin(pin: MKAnnotation) {
+    func showCollectionsViewForPin(pin: PinAnnotation) {
         
         var controller: PhotoAlbumViewController
         controller = self.storyboard?.instantiateViewControllerWithIdentifier("PhotoAlbumViewController") as! PhotoAlbumViewController
-        controller.annotation = pin
-        //presentViewController(controller, animated:true, completion:nil)
+        controller.pinAnnotation = pin
         navigationController!.pushViewController(controller, animated: true)
 
     }
-}
-
-//============================================
-// MARK: Map View User Preferences
-//============================================
-
-extension MapViewController {
+    
+    //============================================
+    // MARK: CORE DATA METHODS
+    //============================================
+    
+    func saveChangesToCoreData() {
+        var error: NSError? = nil
+        CoreDataHelper.sharedContext.save(&error)
+        if let error = error {
+            UiHelper.showAlert(view: self, title: "Core Data Save Error", msg: "Unable to save changes to Core Data")
+        }
+    }
+    
+    func loadPinsFromCoreData() {
+        
+        //prepare fetch request
+        let fetchRequest = NSFetchRequest(entityName: "Pin")
+        
+        //fetch results
+        let error: NSErrorPointer = nil
+        let results = CoreDataHelper.sharedContext.executeFetchRequest(fetchRequest, error: error)
+        if error != nil {
+            UiHelper.showAlert(view: self, title: "Core Data Load Error", msg: "Unable to load pins from Core Data")
+        }
+        pins = results as! [Pin]
+        
+        //convert to annotations and load them on map
+        var annotations = [PinAnnotation]()
+        for pin in pins {
+            let annotation = PinAnnotation(coordinate: CLLocationCoordinate2D(latitude: CLLocationDegrees(pin.latitude), longitude: CLLocationDegrees(pin.longitude)), pin: pin)
+            annotations.append(annotation)
+        }
+        mapView.addAnnotations(annotations)
+    }
+    
+    //============================================
+    // MARK: MAP VIEW PERSISTENCE METHODS
+    //============================================
     
     func saveMapViewRegion() {
-        println("saving map region")
+        
         let region = mapView.regionThatFits(mapView.region)
+        
+        //store variables to user defaults
         NSUserDefaults.standardUserDefaults().setDouble(region.center.longitude, forKey: MAP_VIEW_REGION_CENTER_LONGITUDE)
         NSUserDefaults.standardUserDefaults().setDouble(region.center.latitude, forKey: MAP_VIEW_REGION_CENTER_LATITUDE)
         NSUserDefaults.standardUserDefaults().setDouble(region.span.longitudeDelta, forKey: MAP_VIEW_REGION_SPAN_LONGITUDE_DELTA)
         NSUserDefaults.standardUserDefaults().setDouble(region.span.latitudeDelta, forKey: MAP_VIEW_REGION_SPAN_LATITUDE_DELTA)
-        println("\(region.center.longitude) \(region.center.latitude) \(region.span.longitudeDelta) \(region.span.latitudeDelta)")
     }
     
     func loadMapViewRegion() {
         
-        println("loading map region")
-        
         var region: MKCoordinateRegion = MKCoordinateRegion()
         
-        let centerLongitude = NSUserDefaults.standardUserDefaults().doubleForKey(MAP_VIEW_REGION_CENTER_LONGITUDE)
-        if centerLongitude != 0.0 {
-            region.center.longitude = centerLongitude
-        }
+        //read stored variables from user defaults
+        region.center.longitude = NSUserDefaults.standardUserDefaults().doubleForKey(MAP_VIEW_REGION_CENTER_LONGITUDE)
+        region.center.latitude = NSUserDefaults.standardUserDefaults().doubleForKey(MAP_VIEW_REGION_CENTER_LATITUDE)
+        region.span.longitudeDelta = NSUserDefaults.standardUserDefaults().doubleForKey(MAP_VIEW_REGION_SPAN_LONGITUDE_DELTA)
+        region.span.latitudeDelta = NSUserDefaults.standardUserDefaults().doubleForKey(MAP_VIEW_REGION_SPAN_LATITUDE_DELTA)
         
-        let centerLatitude = NSUserDefaults.standardUserDefaults().doubleForKey(MAP_VIEW_REGION_CENTER_LATITUDE)
-        if centerLatitude != 0.0 {
-            region.center.latitude = centerLatitude
+        //set map view region if a region save has been done previously (i.e. all variables are not 0)
+        if region.center.longitude != 0.0 && region.center.latitude != 0.0 && region.span.longitudeDelta != 0.0 && region.span.latitudeDelta != 0.0 {
+            mapView.setRegion(region, animated: true)
         }
-        
-        let spanLongitudeDelta = NSUserDefaults.standardUserDefaults().doubleForKey(MAP_VIEW_REGION_SPAN_LONGITUDE_DELTA)
-        if spanLongitudeDelta != 0.0 {
-            region.span.longitudeDelta = spanLongitudeDelta
-        }
-        
-        let spanLatitudeDelta = NSUserDefaults.standardUserDefaults().doubleForKey(MAP_VIEW_REGION_SPAN_LATITUDE_DELTA)
-        if spanLatitudeDelta != 0.0 {
-            region.span.latitudeDelta = spanLatitudeDelta
-        }
-        
-        println("\(region.center.longitude) \(region.center.latitude) \(region.span.longitudeDelta) \(region.span.latitudeDelta)")
-        mapView.setRegion(region, animated: true)
-        //mapView.setCenterCoordinate(region.center, animated: true)
         
     }
 }
 
 //============================================
-// MARK: Map View Delegate
+// MARK: MAP VIEW DELEGATE METHODS
 //============================================
 
 extension MapViewController {
-
-    func mapView(mapView: MKMapView!, regionWillChangeAnimated animated: Bool) {
-        //println("xxx")
-    }
     
     func mapView(mapView: MKMapView!, regionDidChangeAnimated animated: Bool) {
-        //println("\(mapView.region.center.longitude) \(mapView.region.center.latitude)")
-        //println("\(mapView.region.span.longitudeDelta) \(mapView.region.span.latitudeDelta)")
-        //println("\(NSUserDefaults.standardUserDefaults().doubleForKey(MAP_VIEW_REGION_CENTER_LONGITUDE))")
-        //println("\(NSUserDefaults.standardUserDefaults().doubleForKey(MAP_VIEW_REGION_CENTER_LATITUDE))")
-        //println("\(NSUserDefaults.standardUserDefaults().doubleForKey(MAP_VIEW_REGION_SPAN_LONGITUDE_DELTA))")
-        //println("\(NSUserDefaults.standardUserDefaults().doubleForKey(MAP_VIEW_REGION_SPAN_LATITUDE_DELTA))")
         saveMapViewRegion()
     }
     
     func mapView(mapView: MKMapView!, didSelectAnnotationView view: MKAnnotationView!) {
-        println("\(view.annotation.coordinate.longitude) \(view.annotation.coordinate.latitude)")
-        showCollectionsViewForPin(view.annotation)
         
+        //deselect the annotation so that we can select it immediately again later
+        mapView.deselectAnnotation(view.annotation, animated: false)
+        
+        //show album
+        showCollectionsViewForPin(view.annotation as! PinAnnotation)
     }
     
 }

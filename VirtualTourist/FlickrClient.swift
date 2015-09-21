@@ -8,10 +8,15 @@
 
 import Foundation
 import MapKit
+import CoreData
 
 class FlickrClient: NSObject {
     
-    //constants
+    //============================================
+    // MARK: CONSTANTS
+    //============================================
+    
+    //constants for flickr photos search
     let BASE_URL = "https://api.flickr.com/services/rest/"
     static let FLICKR_API_KEY = "ce190e05b11ca689a9c1fac8c9de619d"
     let STANDARD_PHOTOS_SEARCH_ARGS = [
@@ -23,6 +28,7 @@ class FlickrClient: NSObject {
         "nojsoncallback": "1"
     ]
     
+    //constants for lat long
     let BOUNDING_BOX_HALF_WIDTH = 1.0
     let BOUNDING_BOX_HALF_HEIGHT = 1.0
     let LAT_MIN = -90.0
@@ -30,10 +36,16 @@ class FlickrClient: NSObject {
     let LON_MIN = -180.0
     let LON_MAX = 180.0
     
-    let PER_PAGE_COUNT_MULT = 1
+    //============================================
+    // MARK: INSTANCE VARIABLES
+    //============================================
     
-    //store parsed data as arrays of structs/objects
+    //variables for storing parsed data
     var photos = [Photo]()
+    
+    //============================================
+    // MARK: CLASS FUNCTIONS
+    //============================================
     
     //singleton class function
     class func sharedInstance() -> FlickrClient {
@@ -42,19 +54,13 @@ class FlickrClient: NSObject {
         }
         return Singleton.sharedInstance
     }
-    
-    //TODO: optimize this
-    func getRandomSubsetFromArray(arr: [AnyObject], count: Int) -> [AnyObject]{
-        var arr2 = arr
-        for i in 0..<(count - 1) {
-            let j = Int(arc4random_uniform(UInt32(count - i))) + i
-            (arr2[i], arr2[j]) = (arr2[j], arr2[i])
-        }
-        return Array(arr2[0..<count])
-    }
-    
-    //adapted from code written by Jarrod Parkes
-    func createBboxStringFromCoordinate(coordinate: CLLocationCoordinate2D) -> String {
+
+    //============================================
+    // MARK: PRIVATE METHODS
+    //============================================
+
+    //creates a flickr bbox string from lat long coordinates, adapted from code by Jarrod Parkes
+    private func createBboxStringFromCoordinate(coordinate: CLLocationCoordinate2D) -> String {
         
         let latitude = coordinate.latitude
         let longitude = coordinate.longitude
@@ -68,6 +74,7 @@ class FlickrClient: NSObject {
         return "\(bottom_left_lon),\(bottom_left_lat),\(top_right_lon),\(top_right_lat)"
     }
 
+    //gets total pages for a flickr request
     private func getTotalPages(args: [String: String], resultHandler: (totalPages: Int)->Void, completionHandler: (completedIndex: Int, errorMsg: String)->Void) {
         
         //make http GET request to flickr's api
@@ -113,14 +120,11 @@ class FlickrClient: NSObject {
         )
     }
     
-    private func fetchPhotosForPage(page: Int, args: [String:String], count: Int, completionHandler: (completedIndex: Int, errorMsg: String)->Void) {
+    private func fetchPhotosForPage(page: Int, args: [String:String], count: Int, totalHandler: (total: Int)->Void, completionHandler: (completedIndex: Int, errorMsg: String)->Void) {
         
         //add page to args
         var argsWithPage = args
         argsWithPage["page"] = "\(page)"
-        
-        println("page: \(page)")
-        println("updated flickr request: \(BASE_URL)\(HttpHelper.escapedParameters(argsWithPage))")
         
         //make http GET request to flickr's api
         HttpHelper.makeHttpRequest(
@@ -153,14 +157,14 @@ class FlickrClient: NSObject {
                         
                         if let jsonDataPhotosPhoto = jsonDataPhotos["photo"] as? [[String: AnyObject]] {
                             
-                            //filter number of results
-                            //var results = self.getRandomSubsetFromArray(jsonDataPhotosPhoto, count: count)
-                            //println("number of filtered results: \(results.count)")
-                            
                             //clear the photos array first
                             self.photos.removeAll()
-        
+                            
+                            //call handler with total number of photos expected
+                            totalHandler(total: jsonDataPhotosPhoto.count)
+                            
                             //populate photos array with Photo that uses parsed data
+                            var hasError = false
                             var index = 0
                             for p in jsonDataPhotosPhoto {
 
@@ -169,32 +173,43 @@ class FlickrClient: NSObject {
                                     
                                     let imageURL = NSURL(string: imageHttpUrlString)
                                     
-                                    println(imageURL)
-                                    
+                                    //get data from url
                                     if let imageData = NSData(contentsOfURL: imageURL!) {
                                         
                                         //save the file to disk
-                                        let imageLocalUrl = FileHelper.saveJpegWithFileName(imageHttpUrlString.lastPathComponent, image: UIImage(data: imageData)!)
+                                        let imageLocalFilePath = FileHelper.saveImageAsJpeg(UIImage(data: imageData)!, filename: imageHttpUrlString.lastPathComponent)
                                         
-                                        println(imageLocalUrl)
+                                        //get the file name, we only want to store this (because document directory changes)
+                                        let imageLocalFileName = imageLocalFilePath.lastPathComponent
                                         
                                         //create an actual Photo object
-                                        let photo = Photo(imageFileUrl: imageLocalUrl)
+                                        let photo = Photo(imageFileName: imageLocalFileName, context: CoreDataHelper.scratchContext)
                                         self.photos.append(photo)
                                         
-                                        //return true to callback to indicate success
+                                        //call handler
                                         completionHandler(completedIndex: index, errorMsg: "")
                                         
                                     } else {
                                         
-                                        println("Image does not exist at \(imageURL)")
+                                        hasError = true
+                                        
                                     }
-                                    
-                                    
                                     
                                 } else {
                                     
-                                    println("Image URL not provided")
+                                    hasError = true
+                                    
+                                }
+                                
+                                if (hasError) {
+                                    
+                                    //we still have to create a Photo object with an empty file name
+                                    //the UI will show an empty image to handle the error
+                                    let photo = Photo(imageFileName: "", context: CoreDataHelper.scratchContext)
+                                    self.photos.append(photo)
+                                    
+                                    //call handler
+                                    completionHandler(completedIndex: index, errorMsg: "")
                                     
                                 }
                                 
@@ -211,6 +226,7 @@ class FlickrClient: NSObject {
                     } else {
 
                         //return false to callback to indicate failure
+                        totalHandler(total: 0)
                         completionHandler(completedIndex: -1, errorMsg: "No photos found at this location")
                     }
                     
@@ -223,27 +239,27 @@ class FlickrClient: NSObject {
         )
     }
     
-    private func fetchPhotos(args: [String:String], count: Int, completionHandler: (completedIndex: Int, errorMsg: String)->Void) {
-        
-        println("flickr request: \(BASE_URL)\(HttpHelper.escapedParameters(args))")
+    private func fetchPhotos(args: [String:String], count: Int, totalHandler: (total: Int)->Void, completionHandler: (completedIndex: Int, errorMsg: String)->Void) {
         
         //do a http request first to find the total number of pages
         getTotalPages(args, resultHandler: { totalPages in
             
-            println("total page: \(totalPages)")
-            
             //then do the actual http request to fetch all photos for a random page within this upper limit
             let pageLimit = min(totalPages, 40)
             let randomPage = Int(arc4random_uniform(UInt32(pageLimit))) + 1
-            self.fetchPhotosForPage(randomPage, args: args, count: count, completionHandler: completionHandler)
+            self.fetchPhotosForPage(randomPage, args: args, count: count, totalHandler: totalHandler, completionHandler: completionHandler)
             
         }, completionHandler: completionHandler)
     }
     
-    func fetchPhotosUsingText(text: String, count: Int, completionHandler: (completedIndex: Int, errorMsg: String)->Void) {
+    //============================================
+    // MARK: PUBLIC METHODS
+    //============================================
+    
+    func fetchPhotosUsingText(text: String, count: Int, totalHandler: (total: Int)->Void, completionHandler: (completedIndex: Int, errorMsg: String)->Void) {
         
-        //ask for more photos than required so that we can filter them later for better randomization
-        let perPage = min(count * PER_PAGE_COUNT_MULT, 500)  //max of 500 photos per page
+        //set max of 500 photos per page
+        let perPage = min(count, 500)
         
         //gather method arguments
         var args = STANDARD_PHOTOS_SEARCH_ARGS  //this does a deep copy which is what I need
@@ -251,19 +267,16 @@ class FlickrClient: NSObject {
         args["per_page"] = "\(perPage)"
         
         //fetch photos
-        fetchPhotos(args, count: count, completionHandler: completionHandler)
+        fetchPhotos(args, count: count, totalHandler: totalHandler, completionHandler: completionHandler)
     }
     
-    func fetchPhotosUsingCoordinate(coordinate: CLLocationCoordinate2D, count: Int, completionHandler: (completedIndex: Int, errorMsg: String)->Void) {
-        
-        //TODO: check for valid coordinates
-        
+    func fetchPhotosUsingCoordinate(coordinate: CLLocationCoordinate2D, count: Int, totalHandler: (total: Int)->Void, completionHandler: (completedIndex: Int, errorMsg: String)->Void) {
         
         //convert coordinates to a string that flickr expects
         let bboxString = createBboxStringFromCoordinate(coordinate)
         
-        //ask for more photos than required so that we can filter them later for better randomization
-        let perPage = min(count * PER_PAGE_COUNT_MULT, 500)  //max of 500 photos per page
+        //set max of 500 photos per page
+        let perPage = min(count, 500)
         
         //gather method arguments
         var args = STANDARD_PHOTOS_SEARCH_ARGS  //this does a deep copy which is what I need
@@ -271,7 +284,7 @@ class FlickrClient: NSObject {
         args["per_page"] = "\(perPage)"
         
         //fetch photos
-        fetchPhotos(args, count: count, completionHandler: completionHandler)
+        fetchPhotos(args, count: count, totalHandler: totalHandler, completionHandler: completionHandler)
         
     }
     

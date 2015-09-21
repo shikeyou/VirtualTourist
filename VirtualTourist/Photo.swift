@@ -7,11 +7,30 @@
 //
 
 import UIKit
+import CoreData
 
-struct Photo {
-    var imageFileUrl: NSURL?
+@objc(Photo)
+
+class Photo : NSManagedObject {
     
-    init(imageFileUrl: NSURL?) {
-        self.imageFileUrl = imageFileUrl
+    @NSManaged var imageFileName: String?
+    @NSManaged var timestamp: NSDate  //for sorting during fetching to get the same order
+    @NSManaged var pin: Pin?
+    
+    //standard core data init method
+    override init(entity: NSEntityDescription, insertIntoManagedObjectContext context: NSManagedObjectContext?) {
+        super.init(entity: entity, insertIntoManagedObjectContext: context)
     }
+    
+    init(imageFileName: String?, context: NSManagedObjectContext) {
+        
+        //add entity to context
+        let entity = NSEntityDescription.entityForName("Photo", inManagedObjectContext: context)!
+        super.init(entity: entity, insertIntoManagedObjectContext: context)
+        
+        //set attributes
+        self.imageFileName = imageFileName
+        self.timestamp = NSDate()
+    }
+    
 }

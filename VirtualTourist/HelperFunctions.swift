@@ -8,11 +8,12 @@
 
 import Foundation
 import UIKit
+import CoreData
 
 //helper class for HTTP requests
 class HttpHelper {
     
-    //class method that makes a HTTP request
+    //method that makes a HTTP request
     class func makeHttpRequest(#requestUrl: String, requestMethod: String, requestAddValues: [(String, String)]? = nil, requestBody: NSData? = nil, requestRemoveXsrfToken: Bool = false, requestDataHandler: (data: NSData!, response: NSURLResponse!, error: NSError!)->Void) {
         
         //create the request object
@@ -48,7 +49,7 @@ class HttpHelper {
         
     }
     
-    //class method that converts a dictionary of parameters to an escaped string for a url (written by Jarrod Parkes)
+    //method that converts a dictionary of parameters to an escaped string for a url (by Jarrod Parkes)
     class func escapedParameters(parameters: [String : AnyObject]) -> String {
         
         var urlVars = [String]()
@@ -112,21 +113,46 @@ class HttpHelper {
 //helper class for file-related stuff
 class FileHelper {
     
-    class func saveJpegWithFileName(filename: String, image: UIImage) -> NSURL {
+    //method that saves a UIImage as a JPEG
+    class func saveImageAsJpeg(image: UIImage, filename: String) -> String {
         
-        //create the URL for the local file
-        let dirPath = NSSearchPathForDirectoriesInDomains(.DocumentDirectory, .UserDomainMask, true)[0] as! String
-        let pathArray = [dirPath, filename]
-        let fileUrl = NSURL.fileURLWithPathComponents(pathArray)!
+        //create the filename for the local file
+        let filePath = FileHelper.getDocumentPathForFile(filename)
         
         //create the jpeg data
         let jpegImageData = UIImageJPEGRepresentation(image, 1.0)
         
         //write the jpeg data to disk
-        jpegImageData.writeToFile(fileUrl.path!, atomically: true)
+        jpegImageData.writeToFile(filePath, atomically: true)
         
-        //return the file url
-        return fileUrl
+        //return the file path
+        return filePath
+    }
+    
+    //method that gets the full path to the current Document directory when given a filename
+    class func getDocumentPathForFile(filename: String) -> String {
+        let dirPath = NSSearchPathForDirectoriesInDomains(.DocumentDirectory, .UserDomainMask, true)[0] as! String
+        return dirPath.stringByAppendingPathComponent(filename)
+    }
+    
+}
+
+//helper class for Core Data stuff
+class CoreDataHelper {
+    
+    //method that gets a scratch context for temporary work
+    //this is computed lazily by default
+    static var scratchContext: NSManagedObjectContext = {
+        var context = NSManagedObjectContext()
+        let delegate = UIApplication.sharedApplication().delegate as! AppDelegate
+        context.persistentStoreCoordinator = delegate.persistentStoreCoordinator
+        return context
+    }()
+    
+    //method that gets the main context
+    static var sharedContext: NSManagedObjectContext {
+        let delegate = UIApplication.sharedApplication().delegate as! AppDelegate
+        return delegate.managedObjectContext!
     }
     
 }
