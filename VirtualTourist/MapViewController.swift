@@ -30,11 +30,6 @@ class MapViewController: UIViewController, MKMapViewDelegate {
     
     var longPressRecognizer: UILongPressGestureRecognizer!
     
-//    var sharedContext: NSManagedObjectContext {
-//        let delegate = UIApplication.sharedApplication().delegate as! AppDelegate
-//        return delegate.managedObjectContext!
-//    }
-    
     //============================================
     // MARK: IBOUTLETS
     //============================================
