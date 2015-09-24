@@ -8,7 +8,7 @@ This is Project 4 for Udacity's iOS Developer Nanodegree.
 
 Main objectives of this project:
 
-* Use Core Data for local persistance of an object structure
+* Use Core Data for local persistance of an object structure, in a thread-safe manner
 * Store media on device file system
 * Use NSURLSessions to interact with a public RESTful API (Flickr)
 * Create a user interface that intuitively communicates network activity and download progress

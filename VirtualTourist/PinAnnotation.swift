@@ -2,7 +2,7 @@
 //  PinAnnotation.swift
 //  VirtualTourist
 //
-//  Created by Skeel on 20/9/15.
+//  Created by Keng Siang Lee on 20/9/15.
 //  Copyright (c) 2015 KSL. All rights reserved.
 //
 
