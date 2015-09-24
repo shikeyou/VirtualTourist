@@ -143,7 +143,7 @@ class CoreDataHelper {
     //method that gets a scratch context for temporary work
     //this is computed lazily by default
     static var scratchContext: NSManagedObjectContext = {
-        var context = NSManagedObjectContext()
+        var context = NSManagedObjectContext(concurrencyType: NSManagedObjectContextConcurrencyType.PrivateQueueConcurrencyType)
         let delegate = UIApplication.sharedApplication().delegate as! AppDelegate
         context.persistentStoreCoordinator = delegate.persistentStoreCoordinator
         return context

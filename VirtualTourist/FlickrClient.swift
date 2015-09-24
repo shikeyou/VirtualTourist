@@ -183,8 +183,10 @@ class FlickrClient: NSObject {
                                         let imageLocalFileName = imageLocalFilePath.lastPathComponent
                                         
                                         //create an actual Photo object
-                                        let photo = Photo(imageFileName: imageLocalFileName, context: CoreDataHelper.scratchContext)
-                                        self.photos.append(photo)
+                                        CoreDataHelper.scratchContext.performBlockAndWait({
+                                            let photo = Photo(imageFileName: imageLocalFileName, context: CoreDataHelper.scratchContext)
+                                            self.photos.append(photo)
+                                        })
                                         
                                         //call handler
                                         completionHandler(completedIndex: index, errorMsg: "")
@@ -205,8 +207,10 @@ class FlickrClient: NSObject {
                                     
                                     //we still have to create a Photo object with an empty file name
                                     //the UI will show an empty image to handle the error
-                                    let photo = Photo(imageFileName: "", context: CoreDataHelper.scratchContext)
-                                    self.photos.append(photo)
+                                    CoreDataHelper.scratchContext.performBlockAndWait({
+                                        let photo = Photo(imageFileName: "", context: CoreDataHelper.scratchContext)
+                                        self.photos.append(photo)
+                                    })
                                     
                                     //call handler
                                     completionHandler(completedIndex: index, errorMsg: "")

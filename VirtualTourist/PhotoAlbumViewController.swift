@@ -80,9 +80,12 @@ class PhotoAlbumViewController: UIViewController, UICollectionViewDelegate, UICo
     
     func saveChangesToCoreData() {
         var error: NSError? = nil
-        CoreDataHelper.sharedContext.save(&error)
+        CoreDataHelper.sharedContext.performBlockAndWait({
+            CoreDataHelper.sharedContext.save(&error)
+        })
         if let error = error {
-            UiHelper.showAlert(view: self, title: "Core Data Save Error", msg: "Unable to save photo changes to Core Data")
+            UiHelper.showAlertAsync(view: self, title: "Core Data Save Error", msg: "Unable to save photo changes to Core Data")
+            return
         }
     }
     
@@ -95,9 +98,13 @@ class PhotoAlbumViewController: UIViewController, UICollectionViewDelegate, UICo
         
         //fetch the results
         let error: NSErrorPointer = nil
-        let results = CoreDataHelper.sharedContext.executeFetchRequest(fetchRequest, error: error)
+        var results: [AnyObject]?
+        CoreDataHelper.sharedContext.performBlockAndWait({
+            results = CoreDataHelper.sharedContext.executeFetchRequest(fetchRequest, error: error)
+        })
         if error != nil {
-            UiHelper.showAlert(view: self, title: "Core Data Load Error", msg: "Unable to load photos from Core Data for this pin")
+            UiHelper.showAlertAsync(view: self, title: "Core Data Load Error", msg: "Unable to load photos from Core Data for this pin")
+            return []
         }
         
         return results as! [Photo]
@@ -117,19 +124,14 @@ class PhotoAlbumViewController: UIViewController, UICollectionViewDelegate, UICo
         
         let photo = photos[index]
         
-        //remove the local image file
-        let error: NSErrorPointer = nil
-        let imageFilePath = FileHelper.getDocumentPathForFile(photo.imageFileName!)
-        NSFileManager.defaultManager().removeItemAtPath(imageFilePath, error: error)
-        if error != nil {
-            UiHelper.showAlert(view: self, title: "File Deletion Error", msg: "Unable to delete image file \(imageFilePath)")
-        }
-        
-        //remove association with pin
-        photo.pin = nil
-        
-        //delete the object in core data
-        CoreDataHelper.sharedContext.deleteObject(photo)
+        photo.managedObjectContext!.performBlockAndWait({
+            
+            //remove association with pin
+            photo.pin = nil
+            
+            //delete the object in core data
+            photo.managedObjectContext!.deleteObject(photo)
+        })
         
         if updateImmediately {
             
@@ -154,6 +156,7 @@ class PhotoAlbumViewController: UIViewController, UICollectionViewDelegate, UICo
         
         //empty the photos array
         photos.removeAll(keepCapacity: false)
+
     }
 
     func fetchFlickrPhotos() {
@@ -180,10 +183,12 @@ class PhotoAlbumViewController: UIViewController, UICollectionViewDelegate, UICo
                 
                 //place in that number of placeholders
                 self.clearAllPhotos()
-                for index in 0..<total {
-                    self.photos.append(Photo(imageFileName: "loading", context: CoreDataHelper.scratchContext))
-                }
-                
+                CoreDataHelper.scratchContext.performBlockAndWait({
+                    for index in 0..<total {
+                        self.photos.append(Photo(imageFileName: "loading", context: CoreDataHelper.scratchContext))
+                    }
+                })
+
                 //reload view
                 dispatch_async(dispatch_get_main_queue(), {
                     self.collectionView.reloadData()
@@ -194,20 +199,25 @@ class PhotoAlbumViewController: UIViewController, UICollectionViewDelegate, UICo
             
                 if completedIndex != -1 {
 
-                    dispatch_async(dispatch_get_main_queue(), {
-                        
-                        //update photo data to use main shared context
-                        let completedImageFileName = FlickrClient.sharedInstance().photos[completedIndex].imageFileName
+                    //update photo data to use main shared context
+                    var flickrClientPhotoAtCompletedIndex = FlickrClient.sharedInstance().photos[completedIndex]
+                    var completedImageFileName: String!
+                    flickrClientPhotoAtCompletedIndex.managedObjectContext!.performBlockAndWait({
+                        completedImageFileName = flickrClientPhotoAtCompletedIndex.imageFileName
+                    })
+                    CoreDataHelper.sharedContext.performBlockAndWait({
                         self.photos[completedIndex] = Photo(imageFileName: completedImageFileName, context: CoreDataHelper.sharedContext)
                         self.photos[completedIndex].pin = self.pinAnnotation.pin
-                        
+                    })
+                    
+                    dispatch_async(dispatch_get_main_queue(), {
                         //reload specific parts of the collection view with the new data
                         self.collectionView.reloadItemsAtIndexPaths([NSIndexPath(forItem: completedIndex, inSection: 0)])
-                        
                     })
                     
                     //do some cleaning up when last photo is fetched
                     if completedIndex == self.totalPhotosFetched - 1 {
+                        
                         dispatch_async(dispatch_get_main_queue(), {
                             
                             //hide the activity indicator
@@ -216,12 +226,13 @@ class PhotoAlbumViewController: UIViewController, UICollectionViewDelegate, UICo
                             //enable new collection button
                             self.newCollectionButton.enabled = true
                             
-                            //disable fetch guard
-                            self.isFetching = false
-                            
-                            //save core data
-                            self.saveChangesToCoreData()
                         })
+                        
+                        //disable fetch guard
+                        self.isFetching = false
+                        
+                        //save core data
+                        self.saveChangesToCoreData()
                     }
                     
                 } else {
@@ -234,14 +245,13 @@ class PhotoAlbumViewController: UIViewController, UICollectionViewDelegate, UICo
                         //enable new collection button
                         self.newCollectionButton.enabled = true
                         
-                        //disable fetch guard
-                        self.isFetching = false
+                        //show error msg
+                        UiHelper.showAlert(view: self, title: "Flickr request failed", msg: errorMsg)
 
                     })
                     
-                    //show error msg
-                    UiHelper.showAlertAsync(view: self, title: "Flickr request failed", msg: errorMsg)
-
+                    //disable fetch guard
+                    self.isFetching = false
                 }
             }
         )
@@ -319,7 +329,11 @@ extension PhotoAlbumViewController {
         let photo = photos[indexPath.row]
         
         //set appropriate data in the cell
-        if let fileName = photo.imageFileName {
+        var photoImageFileName: String?
+        photo.managedObjectContext!.performBlockAndWait({
+            photoImageFileName = photo.imageFileName
+        })
+        if let fileName = photoImageFileName {
             
             //if file path is set to "loading", show the loading icon as a placeholder
             if fileName == "loading" {

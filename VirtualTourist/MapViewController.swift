@@ -87,10 +87,11 @@ class MapViewController: UIViewController, MKMapViewDelegate {
     func addPinFromCoordinate(coordinate: CLLocationCoordinate2D) {
         
         //store a pin
-        let pin = Pin(latitude: Float(coordinate.latitude),
-            longitude: Float(coordinate.longitude),
-            context: CoreDataHelper.sharedContext)
-        pins.append(pin)
+        var pin: Pin!
+        CoreDataHelper.sharedContext.performBlockAndWait({
+            pin = Pin(latitude: Float(coordinate.latitude), longitude: Float(coordinate.longitude), context: CoreDataHelper.sharedContext)
+            self.pins.append(pin)
+        })
         
         //add an annotation to the map
         var annotation = PinAnnotation(coordinate: coordinate, pin: pin)
@@ -116,9 +117,12 @@ class MapViewController: UIViewController, MKMapViewDelegate {
     
     func saveChangesToCoreData() {
         var error: NSError? = nil
-        CoreDataHelper.sharedContext.save(&error)
+        CoreDataHelper.sharedContext.performBlockAndWait({
+            CoreDataHelper.sharedContext.save(&error)
+        })
         if let error = error {
-            UiHelper.showAlert(view: self, title: "Core Data Save Error", msg: "Unable to save changes to Core Data")
+            UiHelper.showAlertAsync(view: self, title: "Core Data Save Error", msg: "Unable to save changes to Core Data")
+            return
         }
     }
     
@@ -129,18 +133,24 @@ class MapViewController: UIViewController, MKMapViewDelegate {
         
         //fetch results
         let error: NSErrorPointer = nil
-        let results = CoreDataHelper.sharedContext.executeFetchRequest(fetchRequest, error: error)
+        var results: [AnyObject]?
+        CoreDataHelper.sharedContext.performBlockAndWait({
+            results = CoreDataHelper.sharedContext.executeFetchRequest(fetchRequest, error: error)
+        })
         if error != nil {
-            UiHelper.showAlert(view: self, title: "Core Data Load Error", msg: "Unable to load pins from Core Data")
+            UiHelper.showAlertAsync(view: self, title: "Core Data Load Error", msg: "Unable to load pins from Core Data")
+            return
         }
         pins = results as! [Pin]
         
         //convert to annotations and load them on map
         var annotations = [PinAnnotation]()
-        for pin in pins {
-            let annotation = PinAnnotation(coordinate: CLLocationCoordinate2D(latitude: CLLocationDegrees(pin.latitude), longitude: CLLocationDegrees(pin.longitude)), pin: pin)
-            annotations.append(annotation)
-        }
+        CoreDataHelper.sharedContext.performBlockAndWait({
+            for pin in self.pins {
+                let annotation = PinAnnotation(coordinate: CLLocationCoordinate2D(latitude: CLLocationDegrees(pin.latitude), longitude: CLLocationDegrees(pin.longitude)), pin: pin)
+                annotations.append(annotation)
+            }
+        })
         mapView.addAnnotations(annotations)
     }
     

@@ -33,4 +33,17 @@ class Photo : NSManagedObject {
         self.timestamp = NSDate()
     }
     
+    override func prepareForDeletion() {
+        
+        //remove the local image file
+        if let photoImageFileName = imageFileName {
+            if photoImageFileName != "" {
+                let error: NSErrorPointer = nil
+                let imageFilePath = FileHelper.getDocumentPathForFile(photoImageFileName)
+                NSFileManager.defaultManager().removeItemAtPath(imageFilePath, error: error)
+            }
+        }
+        
+    }
+    
 }
